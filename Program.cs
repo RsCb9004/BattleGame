@@ -1,135 +1,239 @@
-﻿using RsCb.Console;
-using RsCb.Messager;
-using RsCb.TurnBasedGame;
-using RsCb.TurnBasedGame.RPS;
+﻿using BattleGame.TurnBasedGame;
+using System.Net;
 
-internal static class Program {
+namespace BattleGame {
 
-	private readonly struct ConsoleStyles {
-		public static readonly ConsoleStyle
-			Read = new(ConsoleColor.Blue),
-			Print = new(ConsoleColor.Cyan),
-			PrintHighlight = new(ConsoleColor.Black, ConsoleColor.Cyan),
-			Good = new(ConsoleColor.Green),
-			GoodHighlight = new(ConsoleColor.Black, ConsoleColor.Green),
-			Bad = new(ConsoleColor.Red),
-			BadHighlight = new(ConsoleColor.Black, ConsoleColor.Red);
-	}
+	internal static class Program {
 
-	private readonly struct Messages {
-		public static readonly ConsoleMessage
-			Error = new("An error occurred. Further information:\n", ConsoleStyles.BadHighlight),
-			AskMode = new("Mode (c: client, s: server): ", ConsoleStyles.Print),
-			InvalidMode = new("Invalid input.\n", ConsoleStyles.Bad),
-			AskIpClient = new("Server's ip address: ", ConsoleStyles.Print),
-			AskPortClient = new("Port id: ", ConsoleStyles.Print),
-			AskIpServer = new("Ip address: ", ConsoleStyles.Print),
-			AskPortServer = new("Port id: ", ConsoleStyles.Print),
-			OnBind = new("Binded. Waiting for client to join in...\n", ConsoleStyles.Print),
-			OnConnect = new("Connected!\n", ConsoleStyles.GoodHighlight),
-			Onstart = new("Game Start!\n", ConsoleStyles.PrintHighlight),
-			OnNewRound = new("Round {0} | Score {1}:{2}\n", ConsoleStyles.Print),
-			AskGesture = new("Your Gesture (r: rock, p: paper, s: scissors): ", ConsoleStyles.Print),
-			InvalidGesture = new("Invalid Gesture.\n", ConsoleStyles.Bad),
-			WaitGesture = new("Please wait for opponent's gesture...\n", ConsoleStyles.Print),
-			ShowGesture = new("Opponent's Gesture: ", ConsoleStyles.Print),
-			Tie = new("Tie.\n", ConsoleStyles.Print),
-			Win = new("You win!\n", ConsoleStyles.Good),
-			Lose = new("You lose!\n", ConsoleStyles.Bad);
-	}
+		private delegate bool TryParse<T, TOut>(T input, out TOut output);
 
-	private static IMessager? messager;
-
-	private static void Connect() {
-		string mode;
-		mode = ConsoleIOer.Ask(Messages.AskMode, ConsoleStyles.Read);
-		try {
-			switch(mode) {
-			case "c":
-				ConnectAsClient();
-				break;
-			case "s":
-				ConnectAsServer();
-				break;
-			default:
-				ConsoleIOer.Print(Messages.InvalidMode);
-				Connect();
-				return;
+		private static TOut Ask<TOut>(TryParse<string, TOut> parser, string tip, string err) {
+			string input = ConsoleUI.Ask(tip);
+			if(parser.Invoke(input, out TOut res)) {
+				return res;
+			} else {
+				ConsoleUI.PrintLine(err);
+				return Ask(parser, tip, err);
 			}
-		} catch(Exception e) {
-			ConsoleIOer.Print(Messages.Error);
-			ConsoleIOer.Print(e.Message, ConsoleStyles.Bad);
-			Connect();
-			return;
 		}
-	}
 
-	private static void ConnectAsClient() {
-		string ip = ConsoleIOer.Ask(Messages.AskIpClient, ConsoleStyles.Read);
-		int port = int.Parse(ConsoleIOer.Ask(Messages.AskPortClient, ConsoleStyles.Read));
-		messager = new ClientTcpMessager(ip, port);
-	}
-
-	private static void ConnectAsServer() {
-		string ip = ConsoleIOer.Ask(Messages.AskIpServer, ConsoleStyles.Read);
-		int port = int.Parse(ConsoleIOer.Ask(Messages.AskPortServer, ConsoleStyles.Read));
-		messager = new ServerTcpMessager(ip, port, delegate () {
-			ConsoleIOer.Print(Messages.OnBind);
-		});
-	}
-
-	private static RPSGame.Gesture GetGesture() {
-		string gest = ConsoleIOer.Ask(Messages.AskGesture, ConsoleStyles.Read);
-		switch(gest) {
-		case "r":
-			return RPSGame.Gesture.Rock;
-		case "p":
-			return RPSGame.Gesture.Paper;
-		case "s":
-			return RPSGame.Gesture.Scissors;
-		default:
-			ConsoleIOer.Print(Messages.InvalidGesture);
-			return GetGesture();
+		public static void Main() {
+			ConsoleUI.DefaultFontCol = ConsoleColor.Blue;
+			StartRoom();
 		}
-	}
 
-	private static void Main() {
-		Connect();
-		ConsoleIOer.Print(Messages.OnConnect);
-		RPSGame game = new();
-		GameRunner<RPSGame.Gesture, bool, bool> gameRunner =
-			new(game, GetGesture, messager!);
-		gameRunner.Actions.onStart = delegate () {
-			ConsoleIOer.Print(Messages.Onstart);
-		};
-		gameRunner.Actions.onNewRound = delegate () {
-			ConsoleMessage message = Messages.OnNewRound;
-			message.content = string.Format(
-				message.content,
-				game.Round, game.State.here, game.State.there
+		private static void StartRoom() {
+			string op = ConsoleUI.Ask("%+bEnter 'c' to create a room; enter 'j' to Join a room. > ");
+			switch(op) {
+			case "c": {
+				CreateRoom();
+				break;
+			}
+			case "j": {
+				JoinRoom();
+				break;
+			}
+			default: {
+				ConsoleUI.PrintLine("%+cPlease enter 'c' or 'j'.");
+				StartRoom();
+				break;
+			}
+			}
+		}
+
+		private static void CreateRoom() {
+			IPEndPoint ip = Ask<IPEndPoint?>(
+				IPEndPoint.TryParse,
+				"%+bIP Address: ",
+				"%+cWrong URL format. Please try again."
+			) ?? throw new NullReferenceException();
+			string name = ConsoleUI.Ask("%+bYour Name: ");
+			Room.Information info = new() {
+				name = ConsoleUI.Ask("%+bRoom Name: "),
+				description = ConsoleUI.Ask("%+bRoom Description: ")
+			};
+			int maxPlayer = Ask<int>(
+				int.TryParse,
+				"%+bMax Player: ",
+				"%+cPlease enter an integer."
 			);
-			ConsoleIOer.Print(message);
-		};
-		gameRunner.Actions.onSendOperation = delegate () {
-			ConsoleIOer.Print(Messages.WaitGesture);
-		};
-		gameRunner.Actions.onGetOperation = delegate (RPSGame.Gesture gesture) {
-			ConsoleIOer.Print(Messages.ShowGesture);
-			ConsoleIOer.Print(gesture.ToString() + "\n", ConsoleStyles.PrintHighlight);
-		};
-		gameRunner.Actions.onOperate = delegate () {
-			switch(game.CurResult) {
-			case RPSGame.RoundResult.Tie:
-				ConsoleIOer.Print(Messages.Tie);
-				break;
-			case RPSGame.RoundResult.Win:
-				ConsoleIOer.Print(Messages.Win);
-				break;
-			case RPSGame.RoundResult.Lose:
-				ConsoleIOer.Print(Messages.Lose);
-				break;
+			RoomServerUI ui = new();
+			RoomServer room = new(ui, ip, maxPlayer, new(name), info);
+			room.Lauch();
+			ui.AskOperations();
+		}
+
+		public class RoomServerUI : RoomServer.IUser {
+
+			public RoomServer Master { get; set; }
+
+			public RoomServerUI() {
+				Master = null!;
 			}
-		};
-		gameRunner.Run();
+
+			public void AskOperations() {
+				Console.Clear();
+				Console.SetCursorPosition(0, Master.MaxPlayer + 6);
+				OnUpdated();
+				while(AskOperation()) ;
+			}
+
+			public bool AskOperation() {
+				string[] op = ConsoleUI.Ask("%+b> ").Split();
+				switch(op[0]) {
+				case "k":
+				case "kick": {
+					Remove(op);
+					return true;
+				}
+				case "rf":
+				case "refresh": {
+					OnUpdated();
+					return true;
+				}
+				case "": {
+					return true;
+				}
+				default: {
+					ConsoleUI.PrintLine("%+cUnknown command.");
+					return true;
+				}
+				}
+			}
+
+			private void Remove(string[] op) {
+				if(op.Length < 2) {
+					ConsoleUI.PrintLine("%+bkick [INDEX]\nINDEX\tIndex of the player you want to kick.");
+					return;
+				}
+				if(op.Length > 2) {
+					ConsoleUI.PrintLine("%+cToo Many Arguments.");
+					return;
+				}
+				if(!int.TryParse(op[1], out int index)) {
+					ConsoleUI.PrintLine("%+cArgument should be an integer.");
+					return;
+				}
+				if(index > Master.PlayerList.Count || index < 0) {
+					ConsoleUI.PrintLine("%+cInvalid player index.");
+					return;
+				}
+				if(index == 0) {
+					ConsoleUI.PrintLine("%+cYou can't kick yourself.");
+					return;
+				}
+				Master.RemovePlayer(index - 1);
+			}
+
+			public Joint<int> GetBattlers() {
+				Joint<int> battlers = new(
+					Ask<int>(
+						int.TryParse,
+						"%+bBattler 1 index: ",
+						"%+cPlease enter an integer."
+					),
+					Ask<int>(
+						int.TryParse,
+						"%+bBattler 2 index: ",
+						"%+cPlease enter an integer."
+					)
+				);
+				return battlers;
+			}
+
+			public bool GetIfContinue() {
+				return true;
+			}
+
+			public GameRunner.GameType GetGameType() {
+				return GameRunner.GameType.RPS;
+			}
+
+			public GameRunner.IBattlerUIGetter GetBattlerUI() {
+				throw new NotImplementedException();
+			}
+
+			public GameRunner.ISpectatorUIGetter GetSpectatorUI() {
+				throw new NotImplementedException();
+			}
+
+			public void OnUpdated() {
+				int curPosLeft = Console.CursorLeft;
+				int curPosTop = Console.CursorTop;
+				Console.SetCursorPosition(0, 0);
+				for(int i = 0; i < Master.MaxPlayer + 6; i++)
+					ConsoleUI.PrintLine();
+				Console.SetCursorPosition(0, 0);
+				ConsoleUI.PrintLine($"%+0%-f{Master.Info.name}");
+				ConsoleUI.PrintLine($"%+7{Master.Info.description}");
+				ConsoleUI.PrintLine($"%+bPlayer Count: {Master.PlayerList.Count + 1}/{Master.MaxPlayer + 1}");
+				ConsoleUI.PrintLine();
+				ConsoleUI.PrintLine($"%+e0. {Master.Host.name}");
+				for(int i = 0; i < Master.MaxPlayer; i++) {
+					if(i < Master.PlayerList.Count) {
+						Room.PlayerStat playerStat = Master.PlayerList[i];
+						ConsoleUI.PrintLine($"%+{(playerStat.joined ? 'a' : '2')}{i + 1}. {playerStat.player.name}");
+					} else {
+						ConsoleUI.PrintLine("%+7-");
+					}
+				}
+				ConsoleUI.PrintLine();
+				Console.SetCursorPosition(curPosLeft, curPosTop);
+			}
+		}
+
+		private static void JoinRoom() {
+			IPEndPoint ip = Ask<IPEndPoint?>(
+				IPEndPoint.TryParse,
+				"%+bIP Address: ",
+				"%+cWrong URL format. Please try again."
+			) ?? throw new NullReferenceException();
+			string name = ConsoleUI.Ask("%+bYour Name: ");
+			RoomClient room = new(new RoomClientUI(), ip, new(name));
+			room.Lauch();
+		}
+
+		public class RoomClientUI : RoomClient.IUser {
+
+			public RoomClient Master { get; set; }
+
+			public RoomClientUI() {
+				Master = null!;
+			}
+
+			public GameRunner.IBattlerUIGetter GetBattlerUI() {
+				throw new NotImplementedException();
+			}
+
+			public GameRunner.ISpectatorUIGetter GetSpectatorUI() {
+				throw new NotImplementedException();
+			}
+
+			public void OnUpdated() {
+				Console.Clear();
+				for(int i = 0; i < Master.MaxPlayer + 6; i++)
+					ConsoleUI.PrintLine();
+				Console.SetCursorPosition(0, 0);
+				ConsoleUI.PrintLine($"%+0%-f{Master.Info.name}");
+				ConsoleUI.PrintLine($"%+7{Master.Info.description}");
+				ConsoleUI.PrintLine($"%+bPlayer Count: {Master.PlayerList.Count + 1}/{Master.MaxPlayer + 1}");
+				ConsoleUI.PrintLine();
+				ConsoleUI.PrintLine($"%+e0. {Master.Host.name}");
+				for(int i = 0; i < Master.MaxPlayer; i++) {
+					if(i < Master.PlayerList.Count) {
+						Room.PlayerStat playerStat = Master.PlayerList[i];
+						ConsoleUI.PrintLine($"%+{(playerStat.joined ? 'a' : '2')}{i + 1}. {playerStat.player.name}");
+					} else {
+						ConsoleUI.PrintLine("%+7-");
+					}
+				}
+				ConsoleUI.PrintLine();
+			}
+
+			public bool CheckAccept() {
+				return true;
+			}
+		}
 	}
+
 }

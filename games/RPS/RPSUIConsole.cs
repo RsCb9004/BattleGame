@@ -23,7 +23,7 @@ namespace RPS {
             => await Task.Run(GetOperation);
 
         private Gesture GetOperation() {
-            var res = (Gesture)ConsoleUIConvertChain.Ask("Input your gesture (0: Rock, 1: Paper, 2: Stone): ")
+            var res = (Gesture)ConsoleUIConvertChain.Ask("Input your gesture (0: Rock, 1: Paper, 2: Scissors): ")
                 .TryConvert<string, int>(int.TryParse, "%+cPlease input 1, 2 or 3.")
                 .GetValue();
             ConsoleUI.PrintLine("Waiting for opponent's gesture...");

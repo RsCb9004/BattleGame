@@ -1,20 +1,14 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <OutputType>Exe</OutputType>
     <TargetFramework>net8.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <BaseOutputPath>..\..\bin</BaseOutputPath>
   </PropertyGroup>
 
   <ItemGroup>
-    <Compile Remove="games\**" />
-    <EmbeddedResource Remove="games\**" />
-    <None Remove="games\**" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+    <ProjectReference Include="..\..\BattleGame.csproj" />
   </ItemGroup>
 
 </Project>
